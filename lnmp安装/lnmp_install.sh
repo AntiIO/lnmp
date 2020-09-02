@@ -1,22 +1,14 @@
-##############################################
-## centos7下面nginx+mysql+php安装脚本
-##			ijibu(ijibu.com@gmail.com)	
-#############################################
-
 #软件版本号
-nginx_version="nginx-1.9.6"
-php_version="php-7.0.0RC6"
-mysql_version="mysql-5.7.9"
+nginx_version="nginx-quic"
+php_version="php-7.4.10"
 
 #软件下载地址
-nginx_download_url="http://nginx.org/download/nginx-1.9.6.tar.gz"
-php_download_url="https://downloads.php.net/~ab/php-7.0.0RC6.tar.gz"
-mysql_download_url="http://cdn.mysql.com/Downloads/MySQL-5.7/mysql-5.7.9.tar.gz"
+nginx_download_url="http://hg.nginx.org/nginx-quic/archive/tip.tar.gz"
+php_download_url="https://github.com/php/php-src/archive/php-7.4.10.tar.gz"
 
 #软件安装地址
 nginx_install_path="/usr/local/nginx"
 php_install_path="/usr/local/php"
-mysql_install_path="/usr/local/mysql"
 
 #!/bin/bash
 PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin
@@ -24,19 +16,17 @@ export PATH
 
 # Check if user is root
 if [ $(id -u) != "0" ]; then
-    echo "Error: You must be root to run this script, please use root to install this shell script"
+    echo "Error: 请用root权限运行脚本"
     exit 1
 fi
 
 echo "创建相关目录"
 mkdir -p $nginx_install_path
 mkdir -p $php_install_path
-mkdir -p $mysql_install_path
 mkdir -p /usr/local/src
-mkdir -p /var/log/nginx
 
 
-echo "安装系统工具包"
+echo "安装依赖及工具"
 yum -y install wget gcc gcc-c++ lrzsz ntp unzip pcre-devel zlib zlib-devel openssl openssl-devel
 
 #同步时间
