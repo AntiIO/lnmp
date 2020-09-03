@@ -24,10 +24,13 @@ echo "创建相关目录"
 mkdir -p $nginx_install_path
 mkdir -p $php_install_path
 mkdir -p /root/src
+rm -rf /usr/local/nginx
+rm -rf /usr/local/php
 
 
 echo "安装依赖及工具"
-yum -y install git wget gcc gcc-c++ lrzsz ntp unzip libunwind-devel golang pcre-devel
+rpm -ivh http://mirrors.wlnmp.com/centos/wlnmp-release-centos.noarch.rpm
+yum -y install git wget cmake gcc gcc-c++ wntp lrzsz  unzip libunwind-devel golang pcre-devel
 
 #同步时间
 echo "同步系统时间"
@@ -40,13 +43,13 @@ useradd -s /sbin/nologin -g www www
 
 echo "下载相关软件包"
 cd /root/src
-wget $nginx_download_url
-wget $php_download_url
+[ ! -f tip.tar.gz ] && wget $nginx_download_url
+[ ! -f php-7.4.10.tar.gz ] && wget $php_download_url
 
 echo "编译boringssl密码库"
 export GOPROXY=https://goproxy.io
 export GO111MODULE=on
-git clone https://github.com/google/boringssl.git
+[ ! -d /root/src/boringssl ] && git clone https://github.com/google/boringssl.git
 cd boringssl
 mkdir -p build .openssl/lib .openssl/include
 ln -sf /root/src/boringssl/include/openssl /root/src/boringssl/.openssl/include/openssl
@@ -57,11 +60,11 @@ cp /root/src/boringssl/build/crypto/libcrypto.a /root/src/boringssl/build/ssl/li
 
 echo "下载nginx第三方库"
 cd /root/src
-git clone https://gitee.com/zach/zlib.git zlib-cf
+[ ! -d /root/src/zlib-cf ] && git clone https://gitee.com/zach/zlib.git zlib-cf
 cd zlib-cf
 make -f Makefile.in distclean
 cd /root/src
-git clone https://gitee.com/zach/ngx_brotli.git
+[ ! -d /root/src/ngx_brotli ] && git clone https://gitee.com/zach/ngx_brotli.git
 cd ngx_brotli
 git submodule update --init --recursive
 cd /root/src
@@ -71,13 +74,13 @@ echo "开始安装nginx..........."
 echo 
 chown www.www /var/log/nginx
 
-tar zxvf nginx-quic-*.tar.gz
+[ ! -d /root/src/nginx-quic-* ] && tar zxvf tip.tar.gz
 cd nginx-quic-*/
 sed -i 's@CFLAGS="$CFLAGS -g"@#CFLAGS="$CFLAGS -g"@' auto/cc/gcc
 ./auto/configure --prefix=/usr/local/nginx --user=www --group=www --with-http_stub_status_module --with-http_v2_module --with-http_ssl_module --with-http_gzip_static_module --with-http_realip_module --with-http_flv_module --with-http_mp4_module --with-pcre --with-pcre-jit --with-zlib=../zlib-cf  --add-module=../ngx_brotli --with-ld-opt='-ljemalloc' --with-debug --with-http_v3_module --with-cc-opt="-I../boringssl/include" --with-ld-opt="-L../boringssl/build/ssl -L../boringssl/build/crypto" --with-http_quic_module --with-stream_quic_module
 make && make install
 
-cd /roo/src
+cd /root/src
 mv /usr/local/nginx/conf /usr/local/nginx/conf.bak
 cp -r nginx-conf /usr/local/nginx/conf
 cp nginx.service /lib/systemd/system/
@@ -98,14 +101,16 @@ dnf --enablerepo=PowerTools install oniguruma-devel
 yum -y install git automake gcc gcc-c++ libtool
 cd /root/src
 #安装re2c
-git clone https://github.com/skvadrik/re2c.git re2c
+[ ! -d /root/src/re2c ] git clone https://github.com/skvadrik/re2c.git re2c
 cd re2c
 mkdir -p m4
 ./autogen.sh && ./configure 
 make && make install
 
-tar zvxf php-7.4.10.tar.gz
-cd php-7.4.10
+cd /root/src
+[ ! -d /root/src/php-src-php-7.4.10 ] tar zvxf php-7.4.10.tar.gz
+./buildconf
+cd php-src-php-7.4.10
 ./configure --prefix=/usr/local/php \
 --with-config-file-path=/usr/local/php/etc \
 --with-config-file-scan-dir=/usr/local/php/etc/php.d \
