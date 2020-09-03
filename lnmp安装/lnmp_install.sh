@@ -109,8 +109,8 @@ make && make install
 
 cd /root/src
 [ ! -d /root/src/php-src-php-7.4.10 ] tar zvxf php-7.4.10.tar.gz
-./buildconf
 cd php-src-php-7.4.10
+./buildconf --force
 ./configure --prefix=/usr/local/php \
 --with-config-file-path=/usr/local/php/etc \
 --with-config-file-scan-dir=/usr/local/php/etc/php.d \
