@@ -23,11 +23,11 @@ fi
 echo "创建相关目录"
 mkdir -p $nginx_install_path
 mkdir -p $php_install_path
-mkdir -p /usr/local/src
+mkdir -p /root/src
 
 
 echo "安装依赖及工具"
-yum -y install wget gcc gcc-c++ lrzsz ntp unzip pcre-devel zlib zlib-devel openssl openssl-devel
+yum -y install git wget gcc gcc-c++ lrzsz ntp unzip libunwind-devel golang pcre-devel
 
 #同步时间
 echo "同步系统时间"
@@ -39,159 +39,120 @@ groupadd www
 useradd -s /sbin/nologin -g www www
 
 echo "下载相关软件包"
-cd /usr/local/src
+cd /root/src
 wget $nginx_download_url
 wget $php_download_url
-wget $mysql_download_url
-wget ftp://mcrypt.hellug.gr/pub/crypto/mcrypt/attic/libmcrypt/libmcrypt-2.5.7.tar.gz 
+
+echo "编译boringssl密码库"
+export GOPROXY=https://goproxy.io
+export GO111MODULE=on
+git clone https://github.com/google/boringssl.git
+cd boringssl
+mkdir -p build .openssl/lib .openssl/include
+ln -sf /root/src/boringssl/include/openssl /root/src/boringssl/.openssl/include/openssl
+touch /root/src/boringssl/.openssl/include/openssl/ssl.h
+cmake -B/root/src/boringssl/build -H/root/src/boringssl
+make -C /root/src/boringssl/build
+cp /root/src/boringssl/build/crypto/libcrypto.a /root/src/boringssl/build/ssl/libssl.a /root/src/boringssl/.openssl/lib
+
+echo "下载nginx第三方库"
+cd /root/src
+git clone https://gitee.com/zach/zlib.git zlib-cf
+cd zlib-cf
+make -f Makefile.in distclean
+cd /root/src
+git clone https://gitee.com/zach/ngx_brotli.git
+cd ngx_brotli
+git submodule update --init --recursive
+cd /root/src
 
 
 echo "开始安装nginx..........."
 echo 
 chown www.www /var/log/nginx
 
-tar zxvf nginx-1.9.6.tar.gz
-cd nginx-1.9.6/
-./configure --user=www --group=www --prefix=$nginx_install_path --with-http_stub_status_module --with-http_ssl_module --with-http_gzip_static_module --with-pcre
+tar zxvf nginx-quic-*.tar.gz
+cd nginx-quic-*/
+sed -i 's@CFLAGS="$CFLAGS -g"@#CFLAGS="$CFLAGS -g"@' auto/cc/gcc
+./auto/configure --prefix=/usr/local/nginx --user=www --group=www --with-http_stub_status_module --with-http_v2_module --with-http_ssl_module --with-http_gzip_static_module --with-http_realip_module --with-http_flv_module --with-http_mp4_module --with-pcre --with-pcre-jit --with-zlib=../zlib-cf  --add-module=../ngx_brotli --with-ld-opt='-ljemalloc' --with-debug --with-http_v3_module --with-cc-opt="-I../boringssl/include" --with-ld-opt="-L../boringssl/build/ssl -L../boringssl/build/crypto" --with-http_quic_module --with-stream_quic_module
 make && make install
 
-cd ../
-
-#wget -c "http://wiki.nginx.org/index.php?title=RedHatNginxInitScript&action=raw&anchor=nginx" -O init.d.nginx
-#cp init.d.nginx /etc/init.d/nginx
-#chmod +x /etc/init.d/nginx
-#需要手动配置下/etc/init.d/nginx
-echo "需要手动配置下/etc/init.d/nginx"
-
-chkconfig --add nginx
-chkconfig nginx on
-
-/etc/init.d/nginx start
-/sbin/iptables -I INPUT -p tcp --dport 80 -j ACCEPT
-#ps aux |grep nginx
+cd /roo/src
+mv /usr/local/nginx/conf /usr/local/nginx/conf.bak
+cp -r nginx-conf /usr/local/nginx/conf
+cp nginx.service /lib/systemd/system/
+chmod +x  /lib/systemd/system/nginx.service
+systemctl enable nginx
+mkdir -p /data/wwwlogs/
+mkdir -p /data/wwwlogs/
+mkdir -p /data/wwwroot/default
+mkdir -p /usr/local/nginx/conf/vhost
+touch /data/wwwlogs/access_nginx.log
+systemctl start nginx
 echo "nginx安装完成"
-echo "需要手动配置下/etc/init.d/nginx"
 
-
+echo "预备安装PHP"
 #安装基础库
-yum -y install libxml2 libxml2-devel curl-devel libjpeg-devel libpng-devel
-
-#安装libmcrypt
-cd /usr/local/src
-tar -zxvf libmcrypt-2.5.7.tar.gz 
-cd libmcrypt-2.5.7 
-./configure
+yum install autoconf automake bison libxml2 libxml2 openssl-devel sqlite-devel libcurl-devel libpng-devel libjpeg-devel freetype-devel libicu-devel  libsodium-devel argon2 libargon2-devel libxslt-devel libzip-devel
+dnf --enablerepo=PowerTools install oniguruma-devel
+yum -y install git automake gcc gcc-c++ libtool
+cd /root/src
+#安装re2c
+git clone https://github.com/skvadrik/re2c.git re2c
+cd re2c
+mkdir -p m4
+./autogen.sh && ./configure 
 make && make install
 
-echo "####################################
-	## 安装php-5.4.25
-	####################################"
-cd /usr/local/src
-tar zvxf $php_version.tar.gz
-cd $php_version
-./configure --prefix=$php_install_path --with-config-file-path=$php_install_path/etc --with-mysqli=mysqlnd --with-pdo-mysql=mysqlnd --with-gd --with-iconv --with-zlib --enable-xml --enable-bcmath  --enable-shmop --enable-sysvsem --enable-inline-optimization  --enable-mbregex --enable-fpm --enable-mbstring --enable-ftp --enable-gd-native-ttf  --with-openssl --enable-pcntl --enable-sockets --with-xmlrpc  --enable-zip --enable-soap --without-pear --with-gettext --enable-session --with-mcrypt --with-curl 
-make #编译
-make install #安装
-
-cd /usr/local/src
-cp $php_version/php.ini-production $php_install_path/etc/php.ini
-cp $php_version/sapi/fpm/php-fpm.conf $php_install_path/etc/php-fpm.conf
-cp $php_version/sapi/fpm/init.d.php-fpm.in /etc/init.d/php-fpm
-chmod +x /etc/init.d/php-fpm #添加执行权限
-
-#需要手动配置下/etc/init.d/php-fpm
-#需要手动配置下/usr/local/php-5.4.25/etc/php-fpm.conf
-#需要手动配置下/usr/local/php-5.4.25/etc/php.ini
-
-chkconfig --add php-fpm
-chkconfig php-fpm on
-
-#安装bison
-echo "正在安装bison******************"
-cd /usr/local/src
-wget ftp://ftp.gnu.org/gnu/bison/bison-3.0.4.tar.gz
-tar xf bison-3.0.4.tar.gz
-cd bison-3.0.4
-./configure 
+tar zvxf php-7.4.10.tar.gz
+cd php-7.4.10
+./configure --prefix=/usr/local/php \
+--with-config-file-path=/usr/local/php/etc \
+--with-config-file-scan-dir=/usr/local/php/etc/php.d \
+--with-fpm-user=www \
+--with-fpm-group=www \
+--enable-mbstring  \
+--enable-ftp  \
+--enable-gd   \
+--enable-opcache   \
+--enable-gd-jis-conv \
+--enable-mysqlnd \
+--enable-pdo   \
+--enable-sockets   \
+--enable-fpm   \
+--enable-xml  \
+--enable-soap  \
+--enable-pcntl   \
+--enable-cli   \
+--with-freetype   \
+--with-jpeg \
+--with-openssl  \
+--with-mysqli=mysqlnd   \
+--with-pdo-mysql=mysqlnd   \
+--with-pear   \
+--with-zlib  \
+--with-iconv \
+--with-curl \
+--enable-bcmath \
+--enable-shmop \
+--enable-exif  \
+--enable-sysvsem \
+--enable-mbregex \
+--with-password-argon2 \
+--with-sodium=/usr/local \
+--with-mhash \
+--enable-ftp \
+--enable-intl \
+--with-xsl \
+--with-gettext \
+--with-zip \
+--disable-debug  \
+PKG_CONFIG_PATH=/usr/local/lib/pkgconfig/: 
 make && make install
-
-#安装ncurses
-echo "正在安装ncurses******************"
-cd /usr/local/src
-wget ftp://ftp.gnu.org/gnu/ncurses/ncurses-6.0.tar.gz
-tar xf ncurses-6.0.tar.gz
-cd ncurses-6.0
-./configure 
-make && make install
-
-#安装CMAKE
-echo "正在安装CMAKE******************"
-cd /usr/local/src
-wget https://cmake.org/files/v3.3/cmake-3.3.2.tar.gz
-tar xf cmake-3.3.2.tar.gz
-cd cmake-3.3.2
-./configure 
-gmake && make install
-
-#https://typecodes.com/web/centos7compilemysql.html
-#http://www.tuicool.com/articles/E3yYV3
-#安装mysql
-echo "正在安装mysql******************"
-##############################################
-## 从MySQL 5.7.5开始Boost库是必需的，下载Boost库，
-## 在解压后复制到/usr/local/boost目录下，然后重新
-## cmake并在后面的选项中加上选项 -DWITH_BOOST=/usr/local/boost
-#############################################
-cd /usr/local/src
-tar xf $mysql_version.tar.gz
-cd $mysql_version
-cmake ./ -DCMAKE_INSTALL_PREFIX=$mysql_install_path -DMYSQL_DATADIR=$mysql_install_path/data -DDOWNLOAD_BOOST=1 -DWITH_BOOST=/usr/local/src/boost
-make && make install
-
-#添加用户和用户组
-echo "正在添加用户和用户组******************"
-groupadd mysql  
-useradd mysql -g mysql -M -s /sbin/nologin
-#增加一个名为CentOS Mysql的用户。
-#-g：指定新用户所属的用户组(group)
-#-M：不建立根目录
-#-s：定义其使用的shell，/sbin/nologin代表用户不能登录系统。
-
-#初始化数据库
-echo "正在初始化数据库******************"
-cd $mysql_install_path
-chown -R mysql:mysql . #(为了安全安装完成后请修改权限给root用户)
-scripts/mysql_install_db --user=mysql #(先进行这一步再做如下权限的修改)
-chown -R root:mysql .  #(将权限设置给root用户，并设置给mysql组， 取消其他用户的读写执行权限，仅留给mysql "rx"读执行权限，其他用户无任何权限)
-chown -R mysql:mysql ./data   #(给数据库存放目录设置成mysql用户mysql组，并赋予chmod -R ug+rwx  读写执行权限，其他用户权限一律删除仅给mysql用户权限)
-
-#配置文件和启动脚本
-echo "正在配置mysql******************"
-cp support-files/my-default.cnf  /etc/my.cnf  #(并给/etc/my.cnf +x权限 同时删除 其他用户的写权限，仅仅留给root 和工作组 rx权限,其他一律删除连rx权限都删除)
-#将mysql的启动服务添加到系统服务中  
-cp support-files/mysql.server /etc/init.d/mysql
-chmod +x /etc/init.d/mysql
-#让mysql服务开机启动
-chkconfig --add mysql
-#启动mysql
-service mysql start
-
-#修改mysql root登录的密码(mysql必须先启动了才行哦)
-cd $mysql_install_path
-./bin/mysqladmin -u root password '123456'
-#./bin/mysqladmin -u root -h web-mysql password '123456' #没执行成功。
-
-#如mysql需要远程访问，还要配置防火墙开启3306端口
-/etc/sysconfig/iptables
-#/sbin/iptables -A INPUT m state --state NEW m tcp p dport 3306 j ACCEPT
-/sbin/iptables -I INPUT -p tcp --dport 3306 -j ACCEPT
-service iptables restart
-
-#还要配置数据库中的用户权限，准许远程登录访问。
-#删除密码为空的用户
-#delete from user where password="";
-#准许root用户远程登录
-#update user set host = '%' where user = 'root';
-#重启mysql生效
-/etc/init.d/mysql restart
-
+mv /usr/local/php/etc /usr/local/php/etc.bak
+cp -r  php-etc /usr/local/php/etc
+cp php-fpm.service /lib/systemd/system/
+chmod +x  /lib/systemd/system/php-fpm.service
+systemctl enable php-fpm.service
+service php-fpm status
+echo "PHP安装完成"
